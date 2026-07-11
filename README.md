@@ -1063,38 +1063,822 @@ Awesome WM (Lua scripting for everything)
 KDE Plasma (most configurable DE)
 ```
 
-## 6. Deep Dive: DNF Package Manager
+## 6. Hardware & Driver Support
 
-DNF represents a significant improvement over legacy package managers in the Mandriva lineage:
+OpenMandriva has solid hardware support out of the box, with specific tools for proprietary drivers.
 
-### Why DNF?
-- **Advanced Dependency Resolution:** Uses SAT solver for mathematically sound dependency resolution, preventing system conflicts.
-- **Memory Efficiency:** Significantly lower RAM usage compared to YUM.
-- **Python API:** Extensible through plugins and integrates with GUI tools like OM Control Center and KDE Discover.
+### GPU Drivers
 
-### Repository Structure
-OpenMandriva organizes software into multiple repositories:
-- **Main:** Core system packages
-- **Unsupported:** Additional packages not officially supported
-- **Restricted:** Proprietary or legally restricted software
-- **Non-Free:** Commercial or non-open-source software
+| Vendor | Open-Source Driver | Proprietary Driver | Install Command |
+|---|---|---|---|
+| **AMD** | `amdgpu` (kernel) + `mesa` | Not needed (open-source is excellent) | Pre-installed |
+| **Intel** | `i915` (kernel) + `mesa` | Not needed (open-source is excellent) | Pre-installed |
+| **NVIDIA** | `nouveau` (basic) | `nvidia-driver` (recommended) | `sudo dnf install nvidia-driver` |
 
-### Comparison with Other Package Managers
-| Feature | DNF (OpenMandriva) | APT (Debian/Ubuntu) | Pacman (Arch) |
-|---------|-------------------|---------------------|---------------|
-| Package Format | RPM | DEB | PKG |
-| Dependency Resolution | SAT solver | Advanced | Basic |
-| Memory Usage | Low | Moderate | Low |
-| Configuration | /etc/dnf/ | /etc/apt/ | /etc/pacman.conf |
-| GUI Frontend | dnfdragora, KDE Discover | GNOME Software, Synaptic | Pamac, Octopi |
+**NVIDIA setup:**
+```bash
+# Install proprietary NVIDIA driver
+sudo dnf install nvidia-driver nvidia-driver-cuda
 
-## 7. Summary
+# For newer GPUs (RTX 30/40 series)
+sudo dnf install nvidia-driver nvidia-driver-cuda nvidia-driver-cuda-devel
+
+# After install, reboot
+sudo reboot
+
+# Verify
+nvidia-smi
+```
+
+**AMD/Intel (open-source, pre-installed):**
+```bash
+# Verify GPU is using correct driver
+lspci -k | grep -A 3 VGA
+
+# For Vulkan support (gaming, compute)
+sudo dnf install mesa-vulkan-drivers
+
+# For OpenCL support (compute)
+sudo dnf install mesa-opencl-drivers
+```
+
+### WiFi & Bluetooth
+
+| Component | Driver | Status |
+|---|---|---|
+| Intel WiFi | `iwlwifi` | Pre-installed, excellent support |
+| Realtek WiFi | `rtw88`, `rtw89` | Pre-installed for most chipsets |
+| Broadcom WiFi | `broadcom-wl` | May need proprietary driver |
+| Bluetooth | `bluez` | Pre-installed |
+
+**Broadcom WiFi (if not working):**
+```bash
+sudo dnf install broadcom-wl
+sudo modprobe wl
+```
+
+**Bluetooth management:**
+```bash
+# Install Bluetooth tools
+sudo dnf install bluez bluedevil
+
+# Enable Bluetooth service
+sudo systemctl enable --now bluetooth
+
+# Pair a device (GUI)
+bluedevil-wizard
+
+# Pair a device (CLI)
+bluetoothctl
+> power on
+> agent on
+> scan on
+> pair XX:XX:XX:XX:XX:XX
+> connect XX:XX:XX:XX:XX:XX
+```
+
+### Firmware
+
+OpenMandriva includes `linux-firmware` which provides firmware for most hardware. For the latest firmware:
+
+```bash
+# Update all firmware
+sudo dnf install linux-firmware
+sudo fwupdmgr get-updates
+sudo fwupdmgr update
+```
+
+### Laptop Support
+
+| Feature | Package | Status |
+|---|---|---|
+| Power management | `tlp`, `powertop` | Available in repos |
+| Brightness control | `brightnessctl` | Available in repos |
+| Sleep/suspend | systemd | Works out of box |
+| Fn keys | `kbd- backlight` | Works on most laptops |
+
+```bash
+# Install power management for laptops
+sudo dnf install tlp tlp-rdw
+sudo systemctl enable --now tlp
+
+# Install powertop for battery optimization
+sudo dnf install powertop
+sudo powertop --auto-tune
+```
+
+---
+
+## 7. Security & Sandboxing
+
+OpenMandriva inherits Mandriva's security-conscious design and adds modern hardening.
+
+### Mandatory Access Control
+
+OpenMandriva uses **SELinux** (Security-Enhanced Linux) as its MAC framework, same as Fedora/RHEL.
+
+```bash
+# Check SELinux status
+getenforce
+
+# Set to enforcing (default)
+sudo setenforce 1
+
+# Set to permissive (for debugging)
+sudo setenforce 0
+
+# View SELinux denials
+sudo ausearch -m avc -ts recent
+
+# Generate policy for a denied app
+sudo audit2allow -a
+```
+
+**SELinux vs AppArmor:**
+| Feature | SELinux (OpenMandriva default) | AppArmor (Ubuntu default) |
+|---|---|---|
+| Policy model | Label-based | Path-based |
+| Granularity | Very fine-grained | Coarser |
+| Complexity | Higher learning curve | Easier to configure |
+| Default state | Enforcing | Complain (Ubuntu) |
+
+### Firewall
+
+OpenMandriva ships **firewalld** (same as Fedora/RHEL).
+
+```bash
+# Check firewall status
+sudo firewall-cmd --state
+
+# List active zones
+sudo firewall-cmd --get-active-zones
+
+# Allow a service
+sudo firewall-cmd --add-service=http --permanent
+sudo firewall-cmd --reload
+
+# Allow a port
+sudo firewall-cmd --add-port=8080/tcp --permanent
+sudo firewall-cmd --reload
+
+# Block an IP
+sudo firewall-cmd --add-rich-rule='rule family="ipv4" source address="192.168.1.100" reject' --permanent
+sudo firewall-cmd --reload
+
+# GUI configuration
+sudo dnf install firewall-config
+firewall-config
+```
+
+### Sandbox Tools
+
+| Tool | Type | Use Case |
+|---|---|---|
+| **Flatpak** | App sandboxing | Desktop apps in isolated containers |
+| **Firejail** | Process sandboxing | Run any app in a restricted namespace |
+| **Bubblewrap** | Low-level sandboxing | Used by Flatpak under the hood |
+| **SELinux** | MAC | System-wide mandatory access control |
+
+```bash
+# Install Firejail for additional sandboxing
+sudo dnf install firejail
+
+# Run any app sandboxed
+firejail firefox
+firejail chromium
+firejail libreoffice
+
+# List available profiles
+ls /etc/firejail/
+```
+
+---
+
+## 8. Gaming on OpenMandriva
+
+OpenMandriva is a viable gaming platform with good driver support and access to modern gaming tools.
+
+### Steam
+
+```bash
+# Install Steam
+sudo dnf install steam
+
+# Or via Flatpak (recommended for newer version)
+flatpak install flathub com.valvesoftware.Steam
+
+# Enable 32-bit libraries (required for Steam)
+sudo dnf install mesa-dri-drivers.i686 mesa-vulkan-drivers.i686
+```
+
+### Wine & Proton
+
+| Tool | Purpose | Install |
+|---|---|---|
+| **Wine** | Run Windows apps/games | `sudo dnf install wine` |
+| **Proton** | Valve's Wine fork (via Steam) | Included with Steam |
+| **Lutris** | Game manager with Wine integration | `flatpak install flathub net.lutris.Lutris` |
+| **Bottles** | Wine prefix manager | `flatpak install flathub com.usebottles.bottles` |
+
+```bash
+# Install Wine
+sudo dnf install wine winetricks
+
+# Install Lutris (game manager)
+flatpak install flathub net.lutris.Lutris
+
+# Install Bottles (Wine manager)
+flatpak install flathub com.usebottles.bottles
+
+# Winetricks (install Windows libraries)
+winetricks d3dx9 vcrun2019
+```
+
+### Gaming Performance
+
+```bash
+# Install Mesa Vulkan drivers (AMD/Intel)
+sudo dnf install mesa-vulkan-drivers
+
+# Install NVIDIA Vulkan driver
+sudo dnf install nvidia-driver nvidia-vulkan-driver
+
+# Install Gamemode (FSO optimization)
+sudo dnf install gamemode
+# Usage: gamemoderun %command%
+
+# Install MangoHud (FPS overlay)
+sudo dnf install mangohud
+# Usage: mangohud %command%
+
+# Install OBS Studio (game recording/streaming)
+flatpak install flathub com.obsproject.Studio
+```
+
+### Anti-Cheat Compatibility
+
+| Anti-Cheat | Status | Notes |
+|---|---|---|
+| EasyAntiCheat (EAC) | Partial | Proton Experimental has support |
+| BattlEye | Partial | Improving with Proton updates |
+| Vanguard (Valorant) | No | Kernel-level, incompatible with Linux |
+
+---
+
+## 9. Virtualization & Containers
+
+### KVM/QEMU (Recommended)
+
+KVM is the native Linux hypervisor — fast, stable, and built into the kernel.
+
+```bash
+# Install KVM + tools
+sudo dnf install qemu-kvm virt-manager virt-viewer libvirt
+
+# Enable libvirtd
+sudo systemctl enable --now libvirtd
+
+# Add user to libvirt group
+sudo usermod -aG libvirt $USER
+newgrp libvirt
+
+# Launch virt-manager (GUI)
+virt-manager
+```
+
+### VirtualBox
+
+```bash
+# Install VirtualBox
+sudo dnf install VirtualBox
+
+# Or download from virtualbox.org for latest version
+```
+
+### Docker & Podman
+
+OpenMandriva supports both Docker and Podman (rootless alternative).
+
+**Podman (recommended):**
+```bash
+# Install Podman
+sudo dnf install podman podman-compose
+
+# Run a container
+podman run -it fedora bash
+
+# Build from Dockerfile
+podman build -t myapp .
+
+# Podman is rootless by default (more secure)
+podman ps
+podman images
+```
+
+**Docker:**
+```bash
+# Install Docker
+sudo dnf install docker docker-compose
+
+# Enable Docker service
+sudo systemctl enable --now docker
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Run a container
+docker run -it fedora bash
+```
+
+**Podman vs Docker:**
+| Feature | Podman | Docker |
+|---|---|---|
+| Rootless | Default | Requires root or group |
+| Daemon | No daemon (fork-based) | dockerd daemon |
+| systemd integration | Native | Manual |
+| Docker compat | Yes (`podman-docker`) | Native |
+| Security | Better (rootless) | Worse (daemon = root) |
+
+### LXC/LXD (System Containers)
+
+```bash
+# Install LXC
+sudo dnf install lxc lxc-templates
+
+# Create a container
+sudo lxc-create -t download -n mycontainer -- -d alpine -r 3.18 -a amd64
+
+# Start it
+sudo lxc-start -n mycontainer
+
+# Access it
+sudo lxc-attach -n mycontainer
+```
+
+---
+
+## 10. Networking & Connectivity
+
+### NetworkManager
+
+OpenMandriva uses **NetworkManager** for all network management (wired, WiFi, VPN, mobile broadband).
+
+```bash
+# Check connection status
+nmcli general status
+
+# List connections
+nmcli connection show
+
+# Connect to WiFi
+nmcli device wifi connect "SSID" password "PASSWORD"
+
+# Set static IP
+nmcli connection modify "Wired connection 1" ipv4.method manual ipv4.addresses 192.168.1.100/24 ipv4.gateway 192.168.1.1 ipv4.dns "8.8.8.8,8.8.4.4"
+
+# Restart connection
+nmcli connection down "Wired connection 1" && nmcli connection up "Wired connection 1"
+```
+
+### VPN Support
+
+| VPN Type | Package | Notes |
+|---|---|---|
+| OpenVPN | `NetworkManager-openvpn` | Most common |
+| WireGuard | `wireguard-tools` | Modern, fast |
+| IPSec/IKEv2 | `NetworkManager-libreswan` | Enterprise |
+| PPTP | `NetworkManager-pptp` | Legacy (avoid) |
+
+```bash
+# Install OpenVPN support
+sudo dnf install NetworkManager-openvpn
+
+# Install WireGuard
+sudo dnf install wireguard-tools
+
+# Generate WireGuard config
+wg genkey | tee privatekey | wg pubkey > publickey
+```
+
+### Bluetooth
+
+```bash
+# Install Bluetooth stack
+sudo dnf install bluez bluedevil
+
+# Enable Bluetooth
+sudo systemctl enable --now bluetooth
+
+# Pair devices via GUI
+bluedevil-wizard
+
+# Pair via CLI
+bluetoothctl
+> power on
+> agent on
+> default-agent
+> scan on
+> pair XX:XX:XX:XX:XX:XX
+> trust XX:XX:XX:XX:XX:XX
+> connect XX:XX:XX:XX:XX:XX
+```
+
+---
+
+## 11. Multimedia & Codecs
+
+### Audio
+
+| Framework | Package | Notes |
+|---|---|---|
+| **PipeWire** | `pipewire` | Modern audio/video server (default) |
+| **PulseAudio** | `pulseaudio` | Legacy audio server (replaced by PipeWire) |
+| **ALSA** | `alsa-lib` | Kernel-level audio |
+| **JACK** | `pipewire-jack` | Pro audio (via PipeWire) |
+
+```bash
+# PipeWire is installed by default
+# Verify
+pactl info | grep "Server Name"
+
+# Install PipeWire PulseAudio replacement
+sudo dnf install pipewire-pulseaudio
+
+# For pro audio (JACK support)
+sudo dnf install pipewire-jack-audio-connection-kit
+
+# Volume control GUI
+sudo dnf install pavucontrol
+pavucontrol
+```
+
+### Video Codecs
+
+```bash
+# Install multimedia codecs
+sudo dnf install ffmpeg ffmpeg-free
+
+# Install GStreamer plugins
+sudo dnf install gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugins-ugly-free
+
+# Install libavcodec (FFmpeg backend)
+sudo dnf install libavcodec-free
+
+# Install proprietary codecs (via Flatpak or restricted repo)
+sudo dnf config-manager --set-enabled openmandriva_restricted
+sudo dnf install ffmpeg
+```
+
+### Video Players
+
+| Player | Install | Notes |
+|---|---|---|
+| **VLC** | `flatpak install flathub org.videolan.VLC` | Universal player |
+| **MPV** | `sudo dnf install mpv` | Lightweight, powerful |
+| **Celluloid** | `flatpak install flathub io.github.celluloid_player.Celluloid` | MPV frontend |
+| **Dragon** | `sudo dnf install dragon` | KDE video player |
+
+---
+
+## 12. Kernel & System
+
+### Kernel Versions
+
+OpenMandriva ships with the latest stable Linux kernel, compiled with **LLVM/Clang** (unique among major distros).
+
+| Release | Kernel | Notes |
+|---|---|---|
+| Rock 5.0 | 6.1.x LTS | Stable, supported |
+| Rock 6.0 | 6.6.x LTS | Latest stable Rock |
+| ROME | Latest stable (6.8+) | Bleeding edge |
+
+```bash
+# Check current kernel
+uname -r
+
+# List available kernels
+dnf list available kernel*
+
+# Install a specific kernel version
+sudo dnf install kernel-6.6.0
+
+# Install development kernel (ROME only)
+sudo dnf install kernel-rc
+```
+
+### Systemd Services
+
+```bash
+# List running services
+systemctl list-units --type=service --state=running
+
+# Enable a service
+sudo systemctl enable --now <service>
+
+# Disable a service
+sudo systemctl disable <service>
+
+# Check service status
+systemctl status <service>
+
+# View service logs
+journalctl -u <service> -f
+```
+
+### Init System
+
+OpenMandriva uses **systemd** as its init system (same as Fedora, Ubuntu, Arch).
+
+| Component | Tool | Notes |
+|---|---|---|
+| Init | systemd | PID 1, service management |
+| Logging | journald | Structured logging |
+| Timers | systemd timers | Cron replacement |
+| Networking | NetworkManager | Via systemd-networkd fallback |
+| Bootsplash | dracut | Initramfs generation |
+
+---
+
+## 13. Build System & Package Infrastructure
+
+### ABF (Automated Build Farm)
+
+OpenMandriva uses **ABF** (build.openmandriva.org) — a web-based build system that compiles packages from source.
+
+**How it works:**
+1. Maintainers commit spec files to ABF's Git
+2. ABF builds packages in clean chroot environments
+3. Packages are published to repos after QA
+4. Users install via DNF
+
+```bash
+# Build a package locally (for testing)
+rpmbuild -bb package.spec
+
+# Or use mock for clean builds
+mock -r openmandriva-x86_64 package.src.rpm
+```
+
+### Package Naming Convention
+
+OpenMandriva packages follow RPM naming:
+```
+<name>-<version>-<release>.<dist>.rpm
+```
+
+Example: `firefox-125.0-1-omv2490.x86_64.rpm`
+- `firefox` — package name
+- `125.0` — upstream version
+- `1` — OpenMandriva release number
+- `omv2490` — OpenMandriva version (24.09)
+- `x86_64` — architecture
+
+### RPM Basics
+
+```bash
+# Install a local RPM
+sudo dnf install ./package.rpm
+
+# Query installed RPMs
+rpm -qa | grep firefox
+
+# Query files in a package
+rpm -ql firefox
+
+# Query which package owns a file
+rpm -qf /usr/bin/firefox
+
+# Verify package integrity
+rpm -V firefox
+```
+
+---
+
+## 14. Community & Support
+
+### Official Resources
+
+| Resource | URL | Notes |
+|---|---|---|
+| Website | openmandriva.org | Main portal |
+| Wiki | wiki.openmandriva.org | Documentation |
+| Forum | forum.openmandriva.org | Community support |
+| Bug Tracker | bugs.openmandriva.org | Issue reporting |
+| Build System | build.openmandriva.org | ABF package building |
+| GitLab | gitlab.openmandriva.org | Source code |
+
+### Communication Channels
+
+| Channel | Platform | Notes |
+|---|---|---|
+| IRC | Libera.Chat `#openmandriva` | Real-time chat |
+| Matrix | `#openmandriva:matrix.org` | IRC bridge + native |
+| Telegram | t.me/openmandriva | Announcements + chat |
+| Discord | (check website) | Gaming/community |
+
+### Contributing
+
+```bash
+# Report a bug
+# 1. Go to bugs.openmandriva.org
+# 2. Create an account
+# 3. File a bug with:
+#    - Description of the problem
+#    - Steps to reproduce
+#    - Expected vs actual behavior
+#    - System info: inxi -Fxxxz
+
+# Get system info for bug reports
+sudo dnf install inxi
+inxi -Fxxxz
+
+# Contribute a package
+# 1. Fork the project on gitlab.openmandriva.org
+# 2. Create a spec file
+# 3. Submit a merge request
+
+# Join the team
+# Visit openmandriva.org/contribute
+```
+
+### Getting Help
+
+```bash
+# Generate system info for support
+inxi -Fxxxz
+
+# Check system logs
+journalctl -b          # Current boot
+journalctl -b -1       # Previous boot
+journalctl --since "1 hour ago"
+
+# Check DNF history
+dnf history
+
+# Check SELinux denials
+sudo ausearch -m avc -ts recent
+
+# Check firewall
+sudo firewall-cmd --list-all
+```
+
+---
+
+## 15. Release Cycle & Versioning
+
+### Rock (Stable)
+
+| Version | Codename | Kernel | Support Until |
+|---|---|---|---|
+| Rock 4.0 | Nitrogen | 5.15 LTS | 2024 (EOL) |
+| Rock 5.0 | Oxygen | 6.1 LTS | 2025 |
+| Rock 6.0 | Fluorine | 6.6 LTS | 2026 |
+
+**Rock characteristics:**
+- Point releases every ~6 months
+- Only security and bugfix updates during lifecycle
+- No major version changes (no kernel jumps)
+- Best for servers and production workstations
+
+### ROME (Rolling)
+
+| Version | Kernel | Notes |
+|---|---|---|
+| ROME 24.09 | 6.8+ | Rolling, continuously updated |
+| ROME 24.12 | 6.12+ | Rolling, continuously updated |
+| ROME 25.03 | 6.14+ | Rolling, continuously updated |
+
+**ROME characteristics:**
+- Updates daily/weekly as packages are built
+- Latest kernel, latest software
+- No need for major version upgrades
+- Best for developers and enthusiasts
+
+### Upgrade Paths
+
+```bash
+# Rock → Rock (next version)
+# Fresh install recommended, or:
+sudo dnf --releasever=6.0 distro-sync
+
+# ROME → ROME (continuous)
+sudo dnf upgrade    # Just keep upgrading
+
+# Check current version
+cat /etc/os-release
+```
+
+### Version Numbering
+
+OpenMandriva uses **YY.MM** format:
+- `24.09` = September 2024 release
+- `25.03` = March 2025 release
+
+---
+
+## 16. Accessibility & Localization
+
+### Accessibility Features
+
+| Feature | Package | Status |
+|---|---|---|
+| Screen reader | `orca` | Available, works with KDE/GNOME |
+| High contrast | KDE/GNOME settings | Built-in |
+| Large text | KDE/GNOME settings | Built-in |
+| Keyboard navigation | System-wide | Full support |
+| Braille display | `brltty` | Available in repos |
+| Magnifier | `kmag` (KDE), `magnifier` (GNOME) | Available |
+
+```bash
+# Install Orca screen reader
+sudo dnf install orca
+
+# Install KDE accessibility tools
+sudo dnf install kmag
+
+# Install braille support
+sudo dnf install brltty
+```
+
+### Localization
+
+OpenMandriva supports **50+ languages** out of the box.
+
+```bash
+# Install additional language packs
+sudo dnf install langpacks-es    # Spanish
+sudo dnf install langpacks-fr    # French
+sudo dnf install langpacks-de    # German
+sudo dnf install langpacks-zh    # Chinese
+sudo dnf install langpacks-ja    # Japanese
+sudo dnf install langpacks-ko    # Korean
+sudo dnf install langpacks-ar    # Arabic
+sudo dnf install langpacks-pt    # Portuguese
+
+# List available langpacks
+dnf search langpacks
+
+# Change system language
+localectl set-locale LANG=es_ES.UTF-8
+
+# Or edit /etc/locale.conf
+sudo nano /etc/locale.conf
+# Set: LANG=es_ES.UTF-8
+```
+
+### Input Methods
+
+| Language | Package | Notes |
+|---|---|---|
+| Chinese (Pinyin) | `fcitx5-chinese-addons` | Pinyin input |
+| Japanese | `fcitx5-anthy` | Anthy IME |
+| Korean | `fcitx5-hangul` | Hangul input |
+| Hindi | `ibus-m17n` | Indic scripts |
+
+```bash
+# Install Fcitx5 for CJK input
+sudo dnf install fcitx5 fcitx5-chinese-addons fcitx5-anthy fcitx5-hangul
+
+# Set input method
+im-config -n fcitx5
+```
+
+---
+
+## 17. Architecture & AMD Ryzen Optimization (znver1)
+
+OpenMandriva is one of the very few Linux distributions that provides a dedicated, fully optimized version of the entire OS compiled specifically for modern AMD processors. 
+
+When downloading OpenMandriva, you have choices in architecture:
+- **x86_64:** The standard 64-bit build, compatible with all modern Intel and AMD processors.
+- **aarch64:** Builds for ARM64 devices (like Raspberry Pi and Pinebook Pro).
+- **znver1 (AMD Zen Optimization):** This is a standout feature. The `znver1` ISO is compiled with the `-march=znver1` compiler flag. This instructs the LLVM/Clang compiler to utilize specific instruction sets and pipeline optimizations unique to AMD Ryzen (Zen architecture) processors. If you have an AMD Ryzen CPU (Zen 1, Zen 2, Zen 3, or newer), using this version can yield noticeable performance improvements across the entire OS.
+
+---
+
+## 18. System Installation (Calamares)
+
+OpenMandriva uses the **Calamares installer** framework. 
+- It provides a highly visual, user-friendly graphical installation process out of the live ISO.
+- It supports modern filesystem setups directly from the GUI (like Btrfs, Ext4, F2FS, or XFS).
+- It handles complex partitioning, full-disk encryption (LUKS), and bootloader configuration seamlessly, staying true to Mandrake's legacy of making Linux installation accessible to anyone.
+
+---
+
+## 19. Summary
 
 OpenMandriva bridges historical user-friendly Linux (Mandrake) with modern engineering (LLVM/Clang, rolling releases). It offers:
+
 - **For KDE lovers:** A polished, customized Plasma experience
 - **For developers:** LLVM/Clang ecosystem and rolling release option
 - **For flexibility:** Three complementary package managers (DNF, Flatpak, Homebrew)
 - **For user-friendly interfaces:** GUI tools like dnfdragora and KDE Discover
 - **For stability:** Traditional Rock release or bleeding-edge ROME
+- **For gamers:** Steam, Wine/Proton, Lutris with good GPU driver support
+- **For sysadmins:** KVM, Docker/Podman, firewalld, SELinux
+- **For privacy:** Flatpak sandboxing, Firejail, rootless Podman
+- **For international users:** 50+ languages, CJK input methods, full localization
+- **For accessibility:** Orca screen reader, high contrast, keyboard navigation
 
 Whether you're migrating from Debian/Ubuntu, Red Hat/Fedora, or seeking an alternative distribution, OpenMandriva provides a unique combination of legacy user-friendliness and modern innovation.
